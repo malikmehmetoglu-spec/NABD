@@ -1,0 +1,39 @@
+// src/app/api/get-clinics/route.ts
+// ─── API route لجلب العيادات بصلاحية service_role (يتجاوز RLS) ───
+
+import { isAdminAuthorized } from "../_adminAuth";
+import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+// يجب تعريف SUPABASE_SERVICE_ROLE_KEY في .env.local
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL  || "https://ldqaohjnlxiwvaijcsbm.supabase.co",
+  process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
+
+export async function GET(req: NextRequest) {
+  // ── التحقق من صلاحية الأدمن ─────────────────────────────────
+  if (!isAdminAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("clinics")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("get-clinics error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json(data || [], {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (err) {
+    console.error("get-clinics exception:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
