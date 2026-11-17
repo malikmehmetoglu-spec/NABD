@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/session";
+import { adminMetadata } from "../../metadata";
 import { formatDate, isoDateIn } from "@/lib/time";
 import { formatMoney, SPECIALTIES } from "@/lib/labels";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -8,7 +8,7 @@ import { PLATFORM_TIMEZONE } from "../../config";
 import { STATE_LABEL, subscriptionState } from "../../status";
 import { DeleteClinicForm, PaymentForm, SubscriptionForm } from "./forms";
 
-export const metadata: Metadata = { title: "تفاصيل العيادة" };
+export const generateMetadata = () => adminMetadata("تفاصيل العيادة");
 
 export default async function AdminClinicPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

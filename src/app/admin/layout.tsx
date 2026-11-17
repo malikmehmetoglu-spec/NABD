@@ -6,7 +6,11 @@ import { isPlatformAdmin } from "@/lib/session";
 import { signOut } from "@/app/(auth)/actions";
 import { Icon } from "@/components/icons";
 
-export const metadata: Metadata = { title: { template: "%s · إدارة نبض", default: "إدارة نبض" } };
+export async function generateMetadata(): Promise<Metadata> {
+  return (await isPlatformAdmin())
+    ? { title: { template: "%s · إدارة نبض", default: "إدارة نبض" } }
+    : { title: "الصفحة غير موجودة" };
+}
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // غير الأدمن لا يعرف أن الصفحة موجودة

@@ -1,13 +1,13 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { getUser } from "@/lib/session";
+import { adminMetadata } from "./metadata";
 import { daysUntil, formatDate } from "@/lib/time";
 import { formatNumber, SPECIALTIES } from "@/lib/labels";
 import { Badge, Card, EmptyState, Input, PageHeader, cx } from "@/components/ui";
 import { STATE_LABEL, subscriptionState, type SubscriptionState } from "./status";
 import { PLATFORM_TIMEZONE } from "./config";
 
-export const metadata: Metadata = { title: "العيادات" };
+export const generateMetadata = () => adminMetadata("العيادات");
 
 const FILTERS: { key: "all" | SubscriptionState; label: string }[] = [
   { key: "all", label: "الكل" },
