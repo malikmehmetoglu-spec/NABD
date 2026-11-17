@@ -95,7 +95,8 @@ test("double booking the same doctor is rejected", async () => {
 });
 
 test("secretaries can book but cannot write medical records", async () => {
-  await as(A, `insert into clinic_members (clinic_id, user_id, role, full_name) values ($1,$2,'secretary','سلمى')`, [clinicA, SEC]);
+  const secCode = (await as(A, `select public.create_invite($1, 'secretary') as c`, [clinicA])).rows[0].c;
+  await as(SEC, `select public.join_clinic($1, 'سلمى')`, [secCode]);
   const { rows } = await as(SEC, `select count(*)::int as n from patients`);
   assert.equal(rows[0].n, 2);
   await assert.rejects(
@@ -171,4 +172,61 @@ test("anonymous visitors see nothing", async () => {
   await assert.rejects(
     db.transaction(async (tx) => { await tx.exec("set local role anon"); return tx.query("select * from patients"); }),
   );
+});
+
+// ── تشديد الصلاحيات (migration 0005) ─────────────────────────
+
+test("a secretary cannot delete patients or appointments; the owner can", async () => {
+  const tmp = (await as(A, `insert into patients (clinic_id, full_name, gender) values ($1,'مؤقت','male') returning id`, [clinicA])).rows[0].id;
+  await as(SEC, `delete from patients where id = $1`, [tmp]);
+  assert.equal((await as(A, `select count(*)::int as n from patients where id = $1`, [tmp])).rows[0].n, 1);
+  const appt = (await as(A, `select id from appointments limit 1`)).rows[0].id;
+  await as(SEC, `delete from appointments where id = $1`, [appt]);
+  assert.equal((await as(A, `select count(*)::int as n from appointments where id = $1`, [appt])).rows[0].n, 1);
+  await as(A, `delete from patients where id = $1`, [tmp]);
+  assert.equal((await as(A, `select count(*)::int as n from patients where id = $1`, [tmp])).rows[0].n, 0);
+});
+
+test("members join only through invites, never by direct insert", async () => {
+  await assert.rejects(
+    as(A, `insert into clinic_members (clinic_id, user_id, role, full_name) values ($1,$2,'doctor','دخيل')`, [clinicA, B]),
+  );
+});
+
+test("the owner cannot create a second owner, demote or remove herself", async () => {
+  await as(A, `update clinic_members set role = 'owner' where user_id = $1`, [SEC]).catch(() => {});
+  assert.equal((await as(A, `select role from clinic_members where user_id = $1`, [SEC])).rows[0].role, "secretary");
+  await as(A, `update clinic_members set role = 'doctor' where user_id = $1`, [A]).catch(() => {});
+  await as(A, `delete from clinic_members where user_id = $1`, [A]);
+  assert.equal((await as(A, `select role from clinic_members where user_id = $1`, [A])).rows[0].role, "owner");
+  // لكنه يستطيع تعديل اسمه، وتعديل الآخرين، وإزالتهم
+  await as(A, `update clinic_members set full_name = 'د. أحمد علي' where user_id = $1`, [A]);
+  await as(A, `update clinic_members set full_name = 'سلمى خالد' where user_id = $1`, [SEC]);
+  const names = (await as(A, `select full_name from clinic_members where user_id in ($1,$2) order by role`, [A, SEC])).rows;
+  assert.deepEqual(names.map((r) => r.full_name), ["د. أحمد علي", "سلمى خالد"]);
+});
+
+test("the owner edits clinic settings but not protected columns", async () => {
+  await as(A, `update clinics set name = 'عيادة أ الجديدة', default_fee = 7000 where id = $1`, [clinicA]);
+  assert.equal((await as(A, `select name from clinics where id = $1`, [clinicA])).rows[0].name, "عيادة أ الجديدة");
+  await assert.rejects(as(A, `update clinics set next_file_number = 1 where id = $1`, [clinicA]), /permission denied/);
+  await assert.rejects(as(A, `update clinics set created_at = now() - interval '1 year' where id = $1`, [clinicA]), /permission denied/);
+});
+
+test("appointments, visits and prescriptions need a doctor, not a secretary", async () => {
+  await assert.rejects(
+    as(A, `insert into appointments (clinic_id, patient_id, doctor_id, starts_at, ends_at) values ($1,$2,$3,'2026-12-02 10:00+03','2026-12-02 10:30+03')`, [clinicA, patientA, SEC]),
+    /doctor_id must be a doctor/,
+  );
+  await assert.rejects(
+    as(A, `insert into visits (clinic_id, patient_id, doctor_id) values ($1,$2,$3)`, [clinicA, patientA, SEC]),
+    /doctor_id must be a doctor/,
+  );
+  // الطبيب المدعو مقبول
+  await as(SEC, `insert into appointments (clinic_id, patient_id, doctor_id, starts_at, ends_at) values ($1,$2,$3,'2026-12-02 11:00+03','2026-12-02 11:30+03')`, [clinicA, patientA, DOC]);
+});
+
+test("the owner removes staff, and a removed member loses access", async () => {
+  await as(A, `delete from clinic_members where user_id = $1`, [SEC]);
+  assert.equal((await as(SEC, `select count(*)::int as n from patients`)).rows[0].n, 0);
 });
