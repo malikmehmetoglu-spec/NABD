@@ -2,20 +2,18 @@ import type { Metadata } from "next";
 import { requireSession } from "@/lib/session";
 import { formatDate } from "@/lib/time";
 import { ROLE } from "@/lib/labels";
-import { Avatar, Badge, Button, Card, CardHeader, PageHeader } from "@/components/ui";
+import { Avatar, Badge, Card, CardHeader, PageHeader } from "@/components/ui";
 import { ClinicForm, NameForm } from "./forms";
-import { createInvite, removeMember, revokeInvite } from "./actions";
+import { ChangePasswordForm } from "@/components/change-password-form";
+import { SUPPORT_WHATSAPP_DISPLAY, SUPPORT_WHATSAPP_URL } from "@/lib/contact";
 
 export const metadata: Metadata = { title: "إعدادات العيادة" };
 
 export default async function SettingsPage() {
   const { supabase, clinic, member, access } = await requireSession();
   const owner = member.role === "owner";
-  const [{ data: members }, { data: invites }, { data: plan }, { data: limits }, { count: patientCount }] = await Promise.all([
+  const [{ data: members }, { data: plan }, { data: limits }, { count: patientCount }] = await Promise.all([
     supabase.from("clinic_members").select("*").order("created_at"),
-    owner
-      ? supabase.from("clinic_invites").select("*").is("used_by", null).gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] }),
     supabase.from("plans").select("name").eq("code", clinic.plan).maybeSingle(),
     supabase.rpc("clinic_limits", { p_clinic: clinic.id }),
     supabase.from("patients").select("id", { count: "exact", head: true }),
@@ -32,6 +30,10 @@ export default async function SettingsPage() {
       <Card className="p-5 md:p-6">
         <CardHeader title="حسابي" />
         <NameForm name={member.full_name} />
+        <div className="mt-6 border-t border-divider pt-5">
+          <h3 className="mb-3 text-sm font-bold">كلمة المرور</h3>
+          <ChangePasswordForm />
+        </div>
       </Card>
 
       <Card className="p-5 md:p-6">
@@ -65,7 +67,7 @@ export default async function SettingsPage() {
             </div>
           ))}
         </dl>
-        <p className="mt-4 text-xs text-muted">للترقية أو التجديد تواصل مع إدارة نبض.</p>
+        <p className="mt-4 text-xs text-muted">للترقية أو التجديد تواصل مع فريق نبض على واتساب <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noopener noreferrer" dir="ltr" className="font-semibold">{SUPPORT_WHATSAPP_DISPLAY}</a>.</p>
       </Card>
 
       <Card className="p-5 md:p-6">
@@ -79,42 +81,15 @@ export default async function SettingsPage() {
                 <div className="text-xs text-muted">منذ {formatDate(m.created_at)}</div>
               </div>
               <Badge tone={m.role === "owner" ? "brand" : m.role === "doctor" ? "purple" : "teal"}>{ROLE[m.role]}</Badge>
-              {owner && m.user_id !== member.user_id && (
-                <form action={removeMember}>
-                  <input type="hidden" name="user_id" value={m.user_id} />
-                  <Button variant="ghost" className="min-h-9 px-2.5 text-xs">إزالة</Button>
-                </form>
-              )}
             </li>
           ))}
         </ul>
 
-        {owner && (
-          <div className="mt-5 rounded-2xl bg-canvas p-4">
-            <h3 className="text-sm font-bold">دعوة عضو جديد</h3>
-            <p className="mt-1 text-xs leading-6 text-muted">
-              ولّد رمزاً وأرسله للطبيب أو السكرتير. ينشئ حساباً في نبض، ثم يختار &quot;الانضمام بدعوة&quot; ويدخل الرمز. الرمز صالح 7 أيام ولمرة واحدة.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <form action={createInvite}><input type="hidden" name="role" value="doctor" /><Button variant="soft" icon="plus">رمز لطبيب</Button></form>
-              <form action={createInvite}><input type="hidden" name="role" value="secretary" /><Button variant="soft" icon="plus">رمز لسكرتير</Button></form>
-            </div>
-            {!!invites?.length && (
-              <ul className="mt-4">
-                {invites.map((i) => (
-                  <li key={i.code} className="flex items-center gap-3 border-t border-line py-2.5">
-                    <code dir="ltr" className="rounded-lg bg-white px-2.5 py-1 text-sm font-bold tracking-widest text-brand select-all">{i.code}</code>
-                    <span className="flex-1 text-xs text-muted">{ROLE[i.role]} · ينتهي {formatDate(i.expires_at)}</span>
-                    <form action={revokeInvite}>
-                      <input type="hidden" name="code" value={i.code} />
-                      <Button variant="ghost" className="min-h-9 px-2.5 text-xs">إلغاء</Button>
-                    </form>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+        <p className="mt-4 text-xs leading-6 text-muted">
+          لإضافة طبيب أو سكرتير أو إزالته، تواصل مع فريق نبض على واتساب{" "}
+          <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noopener noreferrer" dir="ltr" className="font-semibold">{SUPPORT_WHATSAPP_DISPLAY}</a>
+          {" "}وسنرسل له بيانات الدخول.
+        </p>
       </Card>
     </>
   );

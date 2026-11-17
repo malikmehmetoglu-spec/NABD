@@ -23,7 +23,7 @@ let db;
 const AUTH_STUB = `
 create role anon nologin; create role authenticated nologin;
 create schema auth;
-create table auth.users (id uuid primary key, email text);
+create table auth.users (id uuid primary key, email text, last_sign_in_at timestamptz);
 create function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('request.jwt.sub', true), '')::uuid $$;
 grant usage on schema public, auth to authenticated, anon;
@@ -53,15 +53,17 @@ before(async () => {
 
 let clinicA, clinicB, patientA;
 
-test("create_clinic makes the caller the owner", async () => {
-  clinicA = (await as(A, `select public.create_clinic('عيادة أ','general','SYP','د. أحمد') as id`)).rows[0].id;
-  clinicB = (await as(B, `select public.create_clinic('عيادة ب','dental','SAR','د. بشرى') as id`)).rows[0].id;
+test("the platform admin creates a clinic and its owner", async () => {
+  clinicA = (await as(ADMIN, `select public.admin_create_clinic($1,'عيادة أ','د. أحمد','general','SYP') as id`, [A])).rows[0].id;
+  clinicB = (await as(ADMIN, `select public.admin_create_clinic($1,'عيادة ب','د. بشرى','dental','SAR') as id`, [B])).rows[0].id;
   const { rows } = await as(A, `select role from clinic_members where clinic_id = $1`, [clinicA]);
   assert.equal(rows[0].role, "owner");
 });
 
-test("a user cannot create a second clinic", async () => {
-  await assert.rejects(as(A, `select public.create_clinic('ثانية','general','SYP','د. أحمد')`));
+test("a user cannot own a second clinic, and only the admin creates clinics", async () => {
+  await assert.rejects(as(ADMIN, `select public.admin_create_clinic($1,'ثانية','د. أحمد')`, [A]), /already belongs/);
+  // ولا يستطيع مستخدم عادي إنشاء عيادة
+  await assert.rejects(as(DOC, `select public.admin_create_clinic($1,'عيادتي','د. دانة')`, [DOC]), /platform admin only/);
 });
 
 test("file numbers are sequential per clinic", async () => {
@@ -100,8 +102,7 @@ test("double booking the same doctor is rejected", async () => {
 });
 
 test("secretaries can book but cannot write medical records", async () => {
-  const secCode = (await as(A, `select public.create_invite($1, 'secretary') as c`, [clinicA])).rows[0].c;
-  await as(SEC, `select public.join_clinic($1, 'سلمى')`, [secCode]);
+  await as(ADMIN, `select public.admin_add_member($1,$2,'secretary','سلمى')`, [clinicA, SEC]);
   const { rows } = await as(SEC, `select count(*)::int as n from patients`);
   assert.equal(rows[0].n, 2);
   await assert.rejects(
@@ -159,18 +160,15 @@ test("completed appointments cannot jump back to scheduled", async () => {
   await assert.rejects(as(A, `update appointments set status = 'scheduled' where id = $1`, [appt]), /invalid status change/);
 });
 
-test("invite codes: only owners create them, they work once", async () => {
-  await assert.rejects(as(SEC, `select public.create_invite($1, 'doctor')`, [clinicA]));
-  await assert.rejects(as(A, `select public.create_invite($1, 'owner')`, [clinicA]));
-  const code = (await as(A, `select public.create_invite($1, 'doctor') as c`, [clinicA])).rows[0].c;
-  assert.match(code, /^[A-Z2-9]{10}$/);
-  const joined = (await as(DOC, `select public.join_clinic($1, 'د. دانة') as id`, [code.toLowerCase()])).rows[0].id;
-  assert.equal(joined, clinicA);
-  const role = (await as(DOC, `select role from clinic_members where user_id = $1`, [DOC])).rows[0].role;
-  assert.equal(role, "doctor");
-  await assert.rejects(as(B, `select public.join_clinic($1, 'x')`, [code]));
-  const seen = await as(B, `select * from clinic_invites`);
-  assert.equal(seen.rows.length, 0);
+test("only the platform admin adds staff, and a clinic has one owner", async () => {
+  await assert.rejects(as(A, `select public.admin_add_member($1,$2,'doctor','د. دانة')`, [clinicA, DOC]), /platform admin only/);
+  await assert.rejects(as(ADMIN, `select public.admin_add_member($1,$2,'owner','د. دانة')`, [clinicA, DOC]), /one owner/);
+  await as(ADMIN, `select public.admin_add_member($1,$2,'doctor','د. دانة')`, [clinicA, DOC]);
+  assert.equal((await as(DOC, `select role from clinic_members where user_id = $1`, [DOC])).rows[0].role, "doctor");
+  await assert.rejects(as(ADMIN, `select public.admin_add_member($1,$2,'doctor','د. دانة')`, [clinicB, DOC]), /already belongs/);
+  const members = await as(ADMIN, `select role, full_name from public.admin_clinic_members($1)`, [clinicA]);
+  assert.deepEqual(members.rows.map((r) => r.role), ["owner", "doctor", "secretary"]);
+  await assert.rejects(as(A, `select * from public.admin_clinic_members($1)`, [clinicA]), /platform admin only/);
 });
 
 test("anonymous visitors see nothing", async () => {
@@ -192,7 +190,7 @@ test("a secretary cannot delete patients or appointments; the owner can", async 
   assert.equal((await as(A, `select count(*)::int as n from patients where id = $1`, [tmp])).rows[0].n, 0);
 });
 
-test("members join only through invites, never by direct insert", async () => {
+test("members are added only by the platform admin, never by direct insert", async () => {
   await assert.rejects(
     as(A, `insert into clinic_members (clinic_id, user_id, role, full_name) values ($1,$2,'doctor','دخيل')`, [clinicA, B]),
   );
@@ -204,11 +202,11 @@ test("the owner cannot create a second owner, demote or remove herself", async (
   await as(A, `update clinic_members set role = 'doctor' where user_id = $1`, [A]).catch(() => {});
   await as(A, `delete from clinic_members where user_id = $1`, [A]);
   assert.equal((await as(A, `select role from clinic_members where user_id = $1`, [A])).rows[0].role, "owner");
-  // لكنه يستطيع تعديل اسمه، وتعديل الآخرين، وإزالتهم
+  // يعدّل اسمه فقط؛ أسماء الطاقم وعضوياتهم من لوحة الأدمن
   await as(A, `update clinic_members set full_name = 'د. أحمد علي' where user_id = $1`, [A]);
-  await as(A, `update clinic_members set full_name = 'سلمى خالد' where user_id = $1`, [SEC]);
+  await as(A, `update clinic_members set full_name = 'اسم آخر' where user_id = $1`, [SEC]);
   const names = (await as(A, `select full_name from clinic_members where user_id in ($1,$2) order by role`, [A, SEC])).rows;
-  assert.deepEqual(names.map((r) => r.full_name), ["د. أحمد علي", "سلمى خالد"]);
+  assert.deepEqual(names.map((r) => r.full_name), ["د. أحمد علي", "سلمى"]);
 });
 
 test("the owner edits clinic settings but not protected columns", async () => {
@@ -231,8 +229,11 @@ test("appointments, visits and prescriptions need a doctor, not a secretary", as
   await as(SEC, `insert into appointments (clinic_id, patient_id, doctor_id, starts_at, ends_at) values ($1,$2,$3,'2026-12-02 11:00+03','2026-12-02 11:30+03')`, [clinicA, patientA, DOC]);
 });
 
-test("the owner removes staff, and a removed member loses access", async () => {
+test("only the admin removes staff, and a removed member loses access", async () => {
   await as(A, `delete from clinic_members where user_id = $1`, [SEC]);
+  assert.equal((await as(SEC, `select count(*)::int as n from patients`)).rows[0].n > 0, true);
+  await assert.rejects(as(ADMIN, `select public.admin_remove_member($1,$2)`, [clinicA, A]), /is the owner/);
+  await as(ADMIN, `select public.admin_remove_member($1,$2)`, [clinicA, SEC]);
   assert.equal((await as(SEC, `select count(*)::int as n from patients`)).rows[0].n, 0);
 });
 
@@ -241,7 +242,7 @@ test("the owner removes staff, and a removed member loses access", async () => {
 let clinicC;
 
 test("a new clinic starts on a 14-day trial", async () => {
-  clinicC = (await as(C, `select public.create_clinic('عيادة ج','general','USD','د. جود') as id`)).rows[0].id;
+  clinicC = (await as(ADMIN, `select public.admin_create_clinic($1,'عيادة ج','د. جود','general','USD') as id`, [C])).rows[0].id;
   const { rows } = await as(C, `select plan, status, round(extract(epoch from expires_at - now()) / 86400) as days from clinics where id = $1`, [clinicC]);
   assert.deepEqual({ plan: rows[0].plan, status: rows[0].status, days: Number(rows[0].days) }, { plan: "trial", status: "active", days: 14 });
 });
@@ -272,7 +273,6 @@ test("an expired clinic is read-only", async () => {
   await as(C, `update patients set full_name = 'تعديل' where id = $1`, [pid]);
   assert.equal((await as(C, `select full_name from patients where id = $1`, [pid])).rows[0].full_name, "منى");
   await assert.rejects(as(C, `select public.save_visit($1::jsonb)`, [JSON.stringify({ clinic_id: clinicC, patient_id: pid, fee: 10 })]));
-  await assert.rejects(as(C, `select public.create_invite($1,'doctor')`, [clinicC]), /subscription_inactive/);
 });
 
 test("recording a payment extends from today when expired, from the expiry date otherwise", async () => {
@@ -295,12 +295,10 @@ test("the patient limit comes from the plan, and a per-clinic override wins", as
   await assert.rejects(as(C, `insert into patients (clinic_id, full_name, gender) values ($1,'رابع','male')`, [clinicC]), /plan_limit_patients/);
 });
 
-test("the staff limit is enforced when joining by invite", async () => {
+test("the staff limit is enforced when the admin adds members", async () => {
   // basic = عضوان: المالك + عضو واحد
-  const c1 = (await as(C, `select public.create_invite($1,'doctor') as c`, [clinicC])).rows[0].c;
-  const c2 = (await as(C, `select public.create_invite($1,'secretary') as c`, [clinicC])).rows[0].c;
-  await as(C2, `select public.join_clinic($1,'د. ثانٍ')`, [c1]);
-  await assert.rejects(as(C3, `select public.join_clinic($1,'سكرتير')`, [c2]), /plan_limit_staff/);
+  await as(ADMIN, `select public.admin_add_member($1,$2,'doctor','د. ثانٍ')`, [clinicC, C2]);
+  await assert.rejects(as(ADMIN, `select public.admin_add_member($1,$2,'secretary','سكرتير')`, [clinicC, C3]), /plan_limit_staff/);
 });
 
 test("a suspended clinic sees no data but can still read its own status", async () => {

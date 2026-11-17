@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseEnv } from "@/lib/supabase/env";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/auth"];
+const PUBLIC_PATHS = ["/login", "/auth"];
 
 /**
  * يجدد جلسة Supabase في كل طلب ويحوّل غير المسجلين إلى صفحة الدخول.
@@ -37,7 +37,7 @@ export async function proxy(request: NextRequest) {
     to.search = path === "/" ? "" : `?next=${encodeURIComponent(path)}`;
     return NextResponse.redirect(to);
   }
-  if (user && (path === "/login" || path === "/signup")) {
+  if (user && path === "/login") {
     const to = request.nextUrl.clone();
     to.pathname = "/";
     to.search = "";

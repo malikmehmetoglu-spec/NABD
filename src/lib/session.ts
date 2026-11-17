@@ -47,10 +47,10 @@ export const requireSession = cache(async (): Promise<Session> => {
     .order("created_at")
     .limit(1)
     .maybeSingle();
-  if (!member) redirect((await isPlatformAdmin()) ? "/admin" : "/onboarding");
+  if (!member) redirect((await isPlatformAdmin()) ? "/admin" : "/no-clinic");
 
   const { data: clinic } = await supabase.from("clinics").select("*").eq("id", member.clinic_id).single();
-  if (!clinic) redirect("/onboarding");
+  if (!clinic) redirect("/no-clinic");
 
   return { supabase, userId: user.id, member, clinic, access: accessOf(clinic) };
 });

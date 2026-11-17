@@ -72,6 +72,15 @@ export type SubscriptionPayment = {
   paid_at: string;
 };
 
+export type AdminMemberRow = {
+  user_id: string;
+  role: MemberRole;
+  full_name: string;
+  email: string | null;
+  last_sign_in_at: string | null;
+  created_at: string;
+};
+
 export type AdminClinicRow = {
   id: string;
   name: string;
@@ -183,17 +192,6 @@ export type Payment = {
   created_at: string;
 };
 
-export type ClinicInvite = {
-  code: string;
-  clinic_id: string;
-  role: MemberRole;
-  created_by: string;
-  expires_at: string;
-  used_by: string | null;
-  used_at: string | null;
-  created_at: string;
-};
-
 export type PatientBalance = {
   patient_id: string;
   clinic_id: string;
@@ -211,7 +209,6 @@ export type Database = {
       visits: Table<Visit, "clinic_id" | "patient_id" | "doctor_id", Exclude<keyof Visit, "clinic_id" | "patient_id" | "doctor_id">, [ToPatient, Rel<"appointment_id", "appointments">]>;
       prescriptions: Table<Prescription, "clinic_id" | "patient_id" | "doctor_id", "id" | "visit_id" | "notes" | "created_at", [ToPatient, Rel<"visit_id", "visits">]>;
       prescription_items: Table<PrescriptionItem, "prescription_id" | "clinic_id" | "drug", Exclude<keyof PrescriptionItem, "prescription_id" | "clinic_id" | "drug">, [Rel<"prescription_id", "prescriptions">]>;
-      clinic_invites: Table<ClinicInvite, "code" | "clinic_id" | "role" | "created_by", "expires_at" | "used_by" | "used_at" | "created_at">;
       plans: Table<Plan, "code" | "name", Exclude<keyof Plan, "code" | "name">>;
       subscription_payments: Table<SubscriptionPayment, "clinic_id" | "plan" | "months" | "amount" | "period_end" | "recorded_by", "id" | "currency" | "note" | "paid_at">;
       payments: Table<Payment, "clinic_id" | "patient_id" | "amount", Exclude<keyof Payment, "clinic_id" | "patient_id" | "amount">, [ToPatient, Rel<"visit_id", "visits">]>;
@@ -220,13 +217,7 @@ export type Database = {
       patient_balances: { Row: PatientBalance; Relationships: [] };
     };
     Functions: {
-      create_clinic: {
-        Args: { p_name: string; p_specialty: string; p_currency: string; p_owner_name: string; p_phone?: string | null };
-        Returns: string;
-      };
       save_visit: { Args: { p: Record<string, unknown> }; Returns: string };
-      create_invite: { Args: { p_clinic: string; p_role: MemberRole }; Returns: string };
-      join_clinic: { Args: { p_code: string; p_full_name: string }; Returns: string };
       is_platform_admin: { Args: Record<string, never>; Returns: boolean };
       clinic_limits: { Args: { p_clinic: string }; Returns: { max_staff: number | null; max_patients: number | null } };
       admin_clinics: { Args: Record<string, never>; Returns: AdminClinicRow[] };
@@ -245,6 +236,22 @@ export type Database = {
         Args: { p_clinic: string; p_plan: string; p_months: number; p_amount: number; p_currency?: string; p_note?: string | null };
         Returns: string;
       };
+      admin_create_clinic: {
+        Args: {
+          p_owner: string;
+          p_name: string;
+          p_owner_name: string;
+          p_specialty?: string;
+          p_currency?: string;
+          p_phone?: string | null;
+          p_plan?: string;
+          p_expires_at?: string;
+        };
+        Returns: string;
+      };
+      admin_add_member: { Args: { p_clinic: string; p_user: string; p_role: MemberRole; p_full_name: string }; Returns: undefined };
+      admin_remove_member: { Args: { p_clinic: string; p_user: string }; Returns: undefined };
+      admin_clinic_members: { Args: { p_clinic: string }; Returns: AdminMemberRow[] };
       admin_delete_clinic: { Args: { p_clinic: string; p_confirm_name: string }; Returns: undefined };
     };
     Enums: {

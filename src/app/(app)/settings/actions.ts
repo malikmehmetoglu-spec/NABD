@@ -42,32 +42,3 @@ export async function updateMyName(_: FormState, form: FormData): Promise<FormSt
   revalidatePath("/", "layout");
   return { fields: { ok: "1" } };
 }
-
-export async function createInvite(form: FormData) {
-  const role = z.enum(["doctor", "secretary"]).parse(form.get("role"));
-  const s = await requireWritable();
-  if ("error" in s) return;
-  const { supabase, clinic } = s;
-  await supabase.rpc("create_invite", { p_clinic: clinic.id, p_role: role });
-  revalidatePath("/settings");
-}
-
-export async function revokeInvite(form: FormData) {
-  const code = z.string().max(20).parse(form.get("code"));
-  const s = await requireWritable();
-  if ("error" in s) return;
-  const { supabase } = s;
-  await supabase.from("clinic_invites").delete().eq("code", code);
-  revalidatePath("/settings");
-}
-
-export async function removeMember(form: FormData) {
-  const userId = z.uuid().parse(form.get("user_id"));
-  const s = await requireWritable();
-  if ("error" in s) return;
-  const { supabase, clinic, member } = s;
-  if (member.role !== "owner" || userId === member.user_id) return;
-  await supabase.from("clinic_members").delete().eq("clinic_id", clinic.id).eq("user_id", userId);
-  revalidatePath("/settings");
-}
-

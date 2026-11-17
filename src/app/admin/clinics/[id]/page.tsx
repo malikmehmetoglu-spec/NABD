@@ -7,6 +7,7 @@ import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader } from "@/c
 import { PLATFORM_TIMEZONE } from "../../config";
 import { STATE_LABEL, subscriptionState } from "../../status";
 import { DeleteClinicForm, PaymentForm, SubscriptionForm } from "./forms";
+import { AddMemberForm, MemberList } from "./members";
 
 export const generateMetadata = () => adminMetadata("تفاصيل العيادة");
 
@@ -14,10 +15,11 @@ export default async function AdminClinicPage({ params }: { params: Promise<{ id
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const { supabase } = await getUser();
-  const [{ data: clinic }, { data: plans }, { data: payments }] = await Promise.all([
+  const [{ data: clinic }, { data: plans }, { data: payments }, { data: members }] = await Promise.all([
     supabase.rpc("admin_clinics").eq("id", id).maybeSingle(),
     supabase.from("plans").select("*").order("sort"),
     supabase.from("subscription_payments").select("*").eq("clinic_id", id).order("paid_at", { ascending: false }),
+    supabase.rpc("admin_clinic_members", { p_clinic: id }),
   ]);
   if (!clinic) notFound();
   const state = STATE_LABEL[subscriptionState(clinic)];
@@ -51,6 +53,15 @@ export default async function AdminClinicPage({ params }: { params: Promise<{ id
             </div>
           ))}
         </dl>
+      </Card>
+
+      <Card className="px-4 py-3 md:px-5">
+        <CardHeader title="الطاقم وحسابات الدخول" action={<span className="text-xs text-muted">{clinic.staff_count}{clinic.max_staff ? ` من ${clinic.max_staff}` : ""}</span>} />
+        <MemberList clinicId={clinic.id} members={members ?? []} tz={tz} />
+        <div className="mt-3 border-t border-divider pt-4">
+          <h3 className="mb-3 text-sm font-bold">إضافة طبيب أو سكرتير</h3>
+          <AddMemberForm clinicId={clinic.id} full={clinic.max_staff !== null && clinic.staff_count >= clinic.max_staff} />
+        </div>
       </Card>
 
       <section className="grid items-start gap-5 lg:grid-cols-2">
@@ -95,7 +106,7 @@ export default async function AdminClinicPage({ params }: { params: Promise<{ id
       <Card className="border-danger-line p-5 md:p-6">
         <CardHeader title="منطقة الخطر" />
         <p className="mb-4 text-sm leading-7 text-muted">
-          الحذف نهائي: يمسح العيادة ومرضاها ومواعيدها وزياراتها ووصفاتها ومدفوعاتها، ولا يمكن التراجع عنه. لإيقاف العيادة مؤقتاً استخدم الحالة «معلّقة» بدلاً منه.
+          الحذف نهائي: يمسح العيادة ومرضاها ومواعيدها وزياراتها ووصفاتها ومدفوعاتها وحسابات دخول طاقمها، ولا يمكن التراجع عنه. لإيقاف العيادة مؤقتاً استخدم الحالة «معلّقة» بدلاً منه.
         </p>
         <DeleteClinicForm clinicId={clinic.id} name={clinic.name} />
       </Card>

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { isPlatformAdmin } from "@/lib/session";
 import { signOut } from "@/app/(auth)/actions";
 import { Icon } from "@/components/icons";
+import { authAdmin, MISSING_SECRET } from "@/lib/supabase/service";
 
 export async function generateMetadata(): Promise<Metadata> {
   return (await isPlatformAdmin())
@@ -25,14 +26,26 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </span>
             <span className="text-lg font-extrabold">إدارة نبض</span>
           </Link>
-          <form action={signOut} className="ms-auto">
+          <nav aria-label="الإدارة" className="ms-auto flex items-center gap-1 text-sm font-semibold">
+            <Link href="/admin" className="rounded-lg px-3 py-2 text-white/85 hover:bg-white/10 hover:text-white">العيادات</Link>
+            <Link href="/admin/account" className="rounded-lg px-3 py-2 text-white/85 hover:bg-white/10 hover:text-white">حسابي</Link>
+          </nav>
+          <form action={signOut}>
             <button aria-label="تسجيل الخروج" className="grid size-10 place-items-center rounded-xl text-white/80 hover:bg-white/10 hover:text-white">
               <Icon name="logout" size={19} />
             </button>
           </form>
         </div>
       </header>
-      <main className="mx-auto flex max-w-[1320px] flex-col gap-5 px-4 py-6 md:gap-6 md:px-8">{children}</main>
+      <main className="mx-auto flex max-w-[1320px] flex-col gap-5 px-4 py-6 md:gap-6 md:px-8">
+        {!authAdmin() && (
+          <div role="alert" className="flex items-center gap-2.5 rounded-xl border-[1.5px] border-danger-line bg-danger-soft px-4 py-3 text-sm font-semibold text-danger-ink">
+            <Icon name="alert" size={18} />
+            {MISSING_SECRET}
+          </div>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { getUser } from "@/lib/session";
 import { adminMetadata } from "./metadata";
 import { daysUntil, formatDate } from "@/lib/time";
 import { formatNumber, SPECIALTIES } from "@/lib/labels";
-import { Badge, Card, EmptyState, Input, PageHeader, cx } from "@/components/ui";
+import { Badge, Card, EmptyState, Input, LinkButton, PageHeader, cx } from "@/components/ui";
 import { STATE_LABEL, subscriptionState, type SubscriptionState } from "./status";
 import { PLATFORM_TIMEZONE } from "./config";
 
@@ -37,7 +37,7 @@ export default async function AdminClinicsPage({ searchParams }: { searchParams:
 
   return (
     <>
-      <PageHeader title="العيادات" subtitle={`${formatNumber(rows.length)} عيادة على المنصة`} />
+      <PageHeader title="العيادات" subtitle={`${formatNumber(rows.length)} عيادة على المنصة`} actions={<LinkButton href="/admin/clinics/new" icon="plus">عيادة جديدة</LinkButton>} />
 
       <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-4">
         {(["active", "expiring", "expired", "suspended"] as const).map((k) => (
@@ -67,7 +67,7 @@ export default async function AdminClinicsPage({ searchParams }: { searchParams:
 
       <Card className="overflow-hidden">
         {list.length === 0 ? (
-          <EmptyState icon="search" title="لا توجد عيادات مطابقة" />
+          <EmptyState icon="search" title={rows.length ? "لا توجد عيادات مطابقة" : "لا توجد عيادات بعد"}>{!rows.length && "أنشئ أول عيادة من زر «عيادة جديدة»."}</EmptyState>
         ) : (
           <ul>
             {list.map((c) => {
