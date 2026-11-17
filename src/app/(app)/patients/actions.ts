@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requireSession } from "@/lib/session";
+import { requireSession, requireWritable } from "@/lib/session";
 import { BLOOD_TYPES } from "@/lib/labels";
 import { dbError, fieldErrors, optionalText, tagList, type FormState } from "@/lib/forms";
 
@@ -29,7 +29,9 @@ const patientSchema = z.object({
 export async function savePatient(_: FormState, form: FormData): Promise<FormState> {
   const parsed = patientSchema.safeParse(Object.fromEntries(form));
   if (!parsed.success) return fieldErrors(parsed.error);
-  const { supabase, clinic } = await requireSession();
+  const s = await requireWritable();
+  if ("error" in s) return { error: s.error };
+  const { supabase, clinic } = s;
   const id = form.get("id");
   const then = form.get("then");
 
@@ -61,7 +63,9 @@ const paymentSchema = z.object({
 export async function recordPayment(_: FormState, form: FormData): Promise<FormState> {
   const parsed = paymentSchema.safeParse(Object.fromEntries(form));
   if (!parsed.success) return fieldErrors(parsed.error);
-  const { supabase, clinic, userId } = await requireSession();
+  const s = await requireWritable();
+  if ("error" in s) return { error: s.error };
+  const { supabase, clinic, userId } = s;
   const { error } = await supabase.from("payments").insert({ ...parsed.data, clinic_id: clinic.id, created_by: userId });
   if (error) return { error: dbError(error) };
   revalidatePath(`/patients/${parsed.data.patient_id}`);

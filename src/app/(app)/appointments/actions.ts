@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requireSession } from "@/lib/session";
+import { requireWritable } from "@/lib/session";
 import { NEXT_STATUS } from "@/lib/labels";
 import { zonedToUtc } from "@/lib/time";
 import { dbError, fieldErrors, optionalText, type FormState } from "@/lib/forms";
@@ -21,7 +21,9 @@ const schema = z.object({
 export async function createAppointment(_: FormState, form: FormData): Promise<FormState> {
   const parsed = schema.safeParse(Object.fromEntries(form));
   if (!parsed.success) return fieldErrors(parsed.error);
-  const { supabase, clinic } = await requireSession();
+  const s = await requireWritable();
+  if ("error" in s) return { error: s.error };
+  const { supabase, clinic } = s;
   const d = parsed.data;
 
   const start = zonedToUtc(d.date, d.time, clinic.timezone);
@@ -47,7 +49,9 @@ const statuses = ["scheduled", "arrived", "in_progress", "completed", "cancelled
 export async function setStatus(form: FormData) {
   const id = z.uuid().parse(form.get("id"));
   const next = z.enum(statuses).parse(form.get("status"));
-  const { supabase } = await requireSession();
+  const s = await requireWritable();
+  if ("error" in s) return;
+  const { supabase } = s;
 
   const { data: appt } = await supabase.from("appointments").select("status").eq("id", id).single();
   if (!appt || !NEXT_STATUS[appt.status as AppointmentStatus].includes(next)) return;

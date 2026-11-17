@@ -44,6 +44,9 @@ export const tagList = z
 export function dbError(error: { code?: string; message: string } | null): string | undefined {
   if (!error) return undefined;
   if (error.message.includes("appointments_no_overlap")) return "الطبيب لديه موعد آخر في هذا الوقت";
+  if (error.message.includes("plan_limit_patients")) return "وصلت العيادة إلى الحد الأقصى للمرضى في خطتها. تواصل مع نبض للترقية.";
+  if (error.message.includes("plan_limit_staff")) return "وصلت العيادة إلى الحد الأقصى للطاقم في خطتها. تواصل مع نبض للترقية.";
+  if (error.message.includes("subscription_inactive")) return "اشتراك العيادة غير فعّال حالياً. تواصل مع نبض للتجديد.";
   if (error.code === "42501") return "ليست لديك صلاحية لهذا الإجراء";
   if (error.code === "23514") return "إحدى القيم خارج الحدود المسموحة";
   if (error.code === "23505") return "هذا السجل موجود مسبقاً";

@@ -9,14 +9,21 @@ import { createInvite, removeMember, revokeInvite } from "./actions";
 export const metadata: Metadata = { title: "إعدادات العيادة" };
 
 export default async function SettingsPage() {
-  const { supabase, clinic, member } = await requireSession();
+  const { supabase, clinic, member, access } = await requireSession();
   const owner = member.role === "owner";
-  const [{ data: members }, { data: invites }] = await Promise.all([
+  const [{ data: members }, { data: invites }, { data: plan }, { data: limits }, { count: patientCount }] = await Promise.all([
     supabase.from("clinic_members").select("*").order("created_at"),
     owner
       ? supabase.from("clinic_invites").select("*").is("used_by", null).gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false })
       : Promise.resolve({ data: [] }),
+    supabase.from("plans").select("name").eq("code", clinic.plan).maybeSingle(),
+    supabase.rpc("clinic_limits", { p_clinic: clinic.id }),
+    supabase.from("patients").select("id", { count: "exact", head: true }),
   ]);
+  const usage = [
+    { label: "الطاقم", used: members?.length ?? 0, max: limits?.max_staff ?? null },
+    { label: "المرضى", used: patientCount ?? 0, max: limits?.max_patients ?? null },
+  ];
 
   return (
     <>
@@ -30,6 +37,35 @@ export default async function SettingsPage() {
       <Card className="p-5 md:p-6">
         <CardHeader title="معلومات العيادة" />
         <ClinicForm clinic={clinic} readOnly={!owner} />
+      </Card>
+
+      <Card className="p-5 md:p-6">
+        <CardHeader
+          title="الاشتراك"
+          action={<Badge tone={access === "active" ? "green" : "danger"}>{access === "active" ? "فعّال" : "منتهٍ"}</Badge>}
+        />
+        <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <dt className="text-xs text-muted">الخطة</dt>
+            <dd className="mt-1 font-bold">{plan?.name ?? clinic.plan}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{access === "active" ? "ينتهي في" : "انتهى في"}</dt>
+            <dd className="mt-1 font-bold">{formatDate(clinic.expires_at, clinic.timezone)}</dd>
+          </div>
+          {usage.map((u) => (
+            <div key={u.label}>
+              <dt className="text-xs text-muted">{u.label}</dt>
+              <dd className="tabular mt-1 font-bold">{u.used}{u.max === null ? " · بلا حد" : ` من ${u.max}`}</dd>
+              {u.max !== null && (
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-chip">
+                  <div className={u.used >= u.max ? "h-full bg-danger" : "h-full bg-brand"} style={{ width: `${Math.min(100, (u.used / u.max) * 100)}%` }} />
+                </div>
+              )}
+            </div>
+          ))}
+        </dl>
+        <p className="mt-4 text-xs text-muted">للترقية أو التجديد تواصل مع إدارة نبض.</p>
       </Card>
 
       <Card className="p-5 md:p-6">

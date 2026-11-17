@@ -108,3 +108,8 @@ export function ageFrom(birthDate: string | null, today: string): number | null 
   if (tm < bm || (tm === bm && td < bd)) age--;
   return age >= 0 ? age : null;
 }
+
+/** الأيام المتبقية حتى لحظة معينة (سالب إن مضت) */
+export function daysUntil(iso: string, now = Date.now()) {
+  return Math.ceil((new Date(iso).getTime() - now) / 86_400_000);
+}

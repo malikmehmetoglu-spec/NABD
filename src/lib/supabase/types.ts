@@ -11,6 +11,7 @@ export type AppointmentStatus =
   | "cancelled"
   | "no_show";
 export type PaymentMethod = "cash" | "card" | "transfer";
+export type ClinicStatus = "active" | "suspended";
 
 type Rel<Col extends string, To extends string> = {
   foreignKeyName: `${Col}_fkey`;
@@ -41,6 +42,55 @@ export type Clinic = {
   slot_minutes: number;
   next_file_number: number;
   created_at: string;
+  plan: string;
+  status: ClinicStatus;
+  expires_at: string;
+  max_staff_override: number | null;
+  max_patients_override: number | null;
+};
+
+export type Plan = {
+  code: string;
+  name: string;
+  max_staff: number | null;
+  max_patients: number | null;
+  price_monthly: number;
+  price_yearly: number;
+  sort: number;
+};
+
+export type SubscriptionPayment = {
+  id: string;
+  clinic_id: string;
+  plan: string;
+  months: number;
+  amount: number;
+  currency: string;
+  note: string | null;
+  period_end: string;
+  recorded_by: string;
+  paid_at: string;
+};
+
+export type AdminClinicRow = {
+  id: string;
+  name: string;
+  specialty: string;
+  phone: string | null;
+  created_at: string;
+  plan: string;
+  plan_name: string;
+  status: ClinicStatus;
+  expires_at: string;
+  max_staff: number | null;
+  max_patients: number | null;
+  max_staff_override: number | null;
+  max_patients_override: number | null;
+  owner_name: string | null;
+  owner_email: string | null;
+  staff_count: number;
+  patient_count: number;
+  last_payment_at: string | null;
 };
 
 export type ClinicMember = {
@@ -162,6 +212,8 @@ export type Database = {
       prescriptions: Table<Prescription, "clinic_id" | "patient_id" | "doctor_id", "id" | "visit_id" | "notes" | "created_at", [ToPatient, Rel<"visit_id", "visits">]>;
       prescription_items: Table<PrescriptionItem, "prescription_id" | "clinic_id" | "drug", Exclude<keyof PrescriptionItem, "prescription_id" | "clinic_id" | "drug">, [Rel<"prescription_id", "prescriptions">]>;
       clinic_invites: Table<ClinicInvite, "code" | "clinic_id" | "role" | "created_by", "expires_at" | "used_by" | "used_at" | "created_at">;
+      plans: Table<Plan, "code" | "name", Exclude<keyof Plan, "code" | "name">>;
+      subscription_payments: Table<SubscriptionPayment, "clinic_id" | "plan" | "months" | "amount" | "period_end" | "recorded_by", "id" | "currency" | "note" | "paid_at">;
       payments: Table<Payment, "clinic_id" | "patient_id" | "amount", Exclude<keyof Payment, "clinic_id" | "patient_id" | "amount">, [ToPatient, Rel<"visit_id", "visits">]>;
     };
     Views: {
@@ -175,12 +227,32 @@ export type Database = {
       save_visit: { Args: { p: Record<string, unknown> }; Returns: string };
       create_invite: { Args: { p_clinic: string; p_role: MemberRole }; Returns: string };
       join_clinic: { Args: { p_code: string; p_full_name: string }; Returns: string };
+      is_platform_admin: { Args: Record<string, never>; Returns: boolean };
+      clinic_limits: { Args: { p_clinic: string }; Returns: { max_staff: number | null; max_patients: number | null } };
+      admin_clinics: { Args: Record<string, never>; Returns: AdminClinicRow[] };
+      admin_update_subscription: {
+        Args: {
+          p_clinic: string;
+          p_plan: string;
+          p_status: ClinicStatus;
+          p_expires_at: string;
+          p_max_staff_override?: number | null;
+          p_max_patients_override?: number | null;
+        };
+        Returns: undefined;
+      };
+      admin_record_payment: {
+        Args: { p_clinic: string; p_plan: string; p_months: number; p_amount: number; p_currency?: string; p_note?: string | null };
+        Returns: string;
+      };
+      admin_delete_clinic: { Args: { p_clinic: string; p_confirm_name: string }; Returns: undefined };
     };
     Enums: {
       member_role: MemberRole;
       gender: Gender;
       appointment_status: AppointmentStatus;
       payment_method: PaymentMethod;
+      clinic_status: ClinicStatus;
     };
     CompositeTypes: Record<string, never>;
   };

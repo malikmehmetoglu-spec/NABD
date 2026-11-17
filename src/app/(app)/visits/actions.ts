@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { canWriteMedical, requireSession } from "@/lib/session";
+import { canWriteMedical, requireWritable } from "@/lib/session";
 import { dbError, fieldErrors, optionalNumber, optionalText, type FormState } from "@/lib/forms";
 
 const item = z.object({
@@ -34,7 +34,9 @@ const schema = z.object({
 export async function saveVisit(_: FormState, form: FormData): Promise<FormState> {
   const parsed = schema.safeParse(Object.fromEntries(form));
   if (!parsed.success) return fieldErrors(parsed.error);
-  const { supabase, clinic, member } = await requireSession();
+  const s = await requireWritable();
+  if ("error" in s) return { error: s.error };
+  const { supabase, clinic, member } = s;
   if (!canWriteMedical(member.role)) return { error: "تسجيل الزيارات للأطباء فقط" };
 
   // بنود الوصفة تأتي كحقول متكررة: drug[], dose[], ...
